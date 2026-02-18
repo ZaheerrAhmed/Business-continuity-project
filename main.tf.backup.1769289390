@@ -1,0 +1,90 @@
+resource "azurerm_resource_group" "aks_primary" {
+  name     = "aks-primary_group"
+  location = "eastus"
+}
+
+resource "azurerm_kubernetes_cluster" "aks_primary" {
+  name                = "aks-primary"
+  location            = azurerm_resource_group.aks_primary.location
+  resource_group_name = azurerm_resource_group.aks_primary.name
+  dns_prefix          = "aks-primary-dns" # CORRECTED: Match Azure
+
+  default_node_pool {
+    name           = "aksprimary" # CORRECTED: Match Azure (not "default")
+    vm_size        = "Standard_DC2ads_v5"
+    node_count     = 1
+    vnet_subnet_id = "/subscriptions/704a6e87-98bd-489c-8e67-1317c8bfc787/resourceGroups/DefaultResourceGroup-EUS/providers/Microsoft.Network/virtualNetworks/vnet-primary/subnets/aks-subnet"
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  # Add lifecycle to ignore fields we don't want to manage
+}
+
+resource "azurerm_postgresql_flexible_server" "primary" {
+  name                   = "postgresqlprimary"
+  resource_group_name    = azurerm_resource_group.aks_primary.name
+  location               = "westus"
+  version                = "16" # Supported version
+  administrator_login    = "zaheeradmin"
+  administrator_password = "Hooria1234"
+  storage_mb             = 32768
+  sku_name               = "GP_Standard_D2s_v3"
+  zone                   = "1" # Adding missing zone
+
+}
+
+resource "azurerm_postgresql_flexible_server" "dr_replica" {
+  name                   = "postgresql-dr-replica"
+  resource_group_name    = azurerm_resource_group.aks_primary.name
+  location               = "westus"
+  version                = "16"
+  administrator_login    = "zaheeradmin"
+  administrator_password = "Hooria1234"
+  storage_mb             = 32768
+  sku_name               = "GP_Standard_D2s_v3"
+  zone                   = "1" # Adding missing zone
+
+}
+
+resource "azurerm_storage_account" "azure_primary" {
+  name                     = "azureprimarystorage"
+  resource_group_name      = azurerm_resource_group.aks_primary.name
+  location                 = "centralus"
+  account_tier             = "Standard"
+  account_replication_type = "RAGRS"
+  account_kind             = "StorageV2"
+  access_tier              = "Hot"
+
+  # Match Azure settings
+  allow_nested_items_to_be_public  = false
+  cross_tenant_replication_enabled = false
+
+  # Keep Azure tags
+  tags = {
+    "ms-resource-usage" = "azure-cloud-shell"
+  }
+}
+
+resource "azurerm_storage_account" "velero" {
+  name                     = "velerobackupforprimary"
+  resource_group_name      = azurerm_resource_group.aks_primary.name
+  location                 = "eastus"
+  account_tier             = "Standard"
+  account_replication_type = "RAGRS"
+  account_kind             = "StorageV2"
+  access_tier              = "Hot"
+
+  # Match Azure settings
+  allow_nested_items_to_be_public  = false
+  cross_tenant_replication_enabled = false
+}
+
+resource "azurerm_virtual_network" "vnet" {
+  name                = "vnet-primary"
+  resource_group_name = azurerm_resource_group.aks_primary.name
+  location            = "eastus"
+  address_space       = ["10.0.0.0/16"]
+}
